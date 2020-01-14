@@ -1,0 +1,120 @@
+
+
+Indicaciones para el editor de texto nano en esta guia
+Ctrl + w (buscar palabra hacia adelante)
+Alt + 6  (copiar la linea actual)
+Ctrl + u (pegar la linea copiada)
+Ctrl + o (guardar los cambios realizados)
+Ctrl + x (salir de nano)
+
+
+Guia de Instalación de Arch Linux UEFI GRUB 
+
+1-  La distribucion de teclado por defecto es US
+1.1 loadkeys es (Para españa)
+1.2 localectl list-keymaps (Para todos los teclados disponibles en el iso de Arch Linux)
+1.3 localectl list-keymaps | grep -i codigo (En codigo deben poner el de vuestro pais o lenguaje)
+
+2-  Verificar el modo de arranque
+2.1 ls /sys/firmware/efi/efivars
+2.2 Si hay directorios el sistema esta en MODO UEFI
+2.3 Si no existen directorios el sistema esta en MODO BIOS o CSM 
+
+3-  Conectar a Internet
+3.1 ip link
+3.2 ping -c 3 archlinux.org
+3.3 wifi-menu (Programa grafico para conectarse a una red wifi)
+
+4-  Actualizar el reloj del sistema
+4.1 timedatectl set-ntp true
+
+5-  Partición de discos
+5.1 fdisk -l (ver todos los discos que esta conectados en el portatil)  ( sda en mi caso )
+5.2 fdisk /dev/sda (sda/sdx/nvme)(disco seleccionado para crear una tabla de particiones)
+5.3 p (ver particiones existentes)
+5.4 g (crear particion GPT limpia)
+5.5 n (crear nueva particion)(creamos 3 particiones: UEFI de 512M, root de 50G y home espacio restante)
+5.6 t (tipo de particion)(UEFI=1, root=24, home=20)
+5.7 p (para confirmar las particiones creadas recientemente)(sda1, sda2, sda3)
+5.8 w (guardar todos los cambios realizados)
+
+6-  Formatear las particiones
+6.1 mkfs.fat -F32 /dev/sda1 (UEFI)
+6.2 mkfs.ext4 /dev/sda2 (root)
+6.3 mkfs.ext4 /dev/sda3 (home)
+
+7-  Crear carpetas y montar particiones del sistema
+7.1 mount /dev/sda2 /mnt
+7.2 mkdir /mnt/home
+7.3 mount /dev/sda3 /mnt/home
+7.4 mkdir -p /mnt/boot/efi
+7.5 mount /dev/sda1 /mnt/boot/efi
+7.6 lsblk (para ver que todo esta correcto)
+
+8-  Seleccionar los mirrors de descarga adecuados para una instalación mas rapida.
+8.1 nano /etc/pacman.d/mirrorlist 
+8.2 Presionar (ctrl + w) ponemos el nombre del pais en el que estamos o pais cercano.
+8.3 ponemos el cursor debajo del pais en el principio de la linea llamada server, y copiamos con ( alt + 6 )
+8.4 Vamos al principio donde comienzan los paices y colocamos el nuestro ejemplo:(##Sweden) 
+8.5 justo debajo del pais que hemos puesto pegamos con ( ctrl + u ) para agregar la fila server de antes.
+8.6 pacman -Syy (actualizar solo mirrors)
+
+9-  Instalar el sistema base
+9.1 pacstrap -i /mnt base base-devel linux linux-firmware nano networkmanager grub efibootmgr os-prober ntfs-3g 
+xdg-user-dirs xf86-input-synaptics
+
+10-  Configurar el sistema
+10.1 genfstab -U /mnt >> /mnt/etc/fstab (definir como se deben montar las particiones en el sistema)
+10.2 cat /mnt/etc/fstab (verificar el comando anterior)
+10.3 arch-chroot /mnt (entrar en el nuevo sistema)
+
+11-  Zona horaria
+11.1 ln -sf /usr/share/zoneinfo/ (presionar ( Tab ) para ver todas las zonas horarias existentes)
+11.2 ln -sf /usr/share/zoneinfo/Europe/Stockholm /etc/localtime (en mi caso)
+
+12-  Hora local
+12.1 hwclock --systohc --utc 
+
+13-  Localización
+13.1 nano /etc/locale.gen (buscamos nuestro pais o region) y suprimimos # para activarlo.
+13.2 locale-gen (actualizar)
+13.2 echo LANG=en_US.UTF-8 > /etc/locale.conf (preferencias de localización)
+
+14-  Configuración de red
+14.1 echo RAZER-BLADE-15 > /etc/hostname (nombre del portatil ejemplo: RAZER-BLADE-15)
+14.2 nano /etc/hosts (añadir el nombre al archivo hosts)
+14.3 127.0.1.1 localhost.localdomain RAZER-BLADE-15 
+
+15-  Contraseña root
+15.1 passwd (poner la contraseña root deseada)
+
+16-  Crear usuario
+16.1 useradd -m -g users -G wheel -s /bin/bash mb-pro (crear usuario ejemplo mb-pro)
+16.2 passwd mb-pro (contraseña para usuario mb-pro)
+16.3 EDITOR=nano visudo (habilitar privilegios de administrador al usuario)
+16.4 suprimir # en %wheel ALL=(ALL) ALL
+
+17-  Boot loader ( GRUB )
+17.1 lsblk
+17.2 grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --recheck
+17.3 grub-mkconfig -o /boot/grub/grub.cfg
+17.4 sudo mkdir /boot/efi/EFI/BOOT
+17.5 sudo cp /boot/efi/EFI/GRUB/grubx64.efi /boot/efi/EFI/BOOT/BOOTX64.EFI
+
+18-  Instalar escritorio plasma
+18.1 pacman -S pulseaudio pulseaudio-alsa xorg xorg-xinit xorg-server
+18.2 pacman -S plasma-desktop plasma-meta kde-gtk-config konsole dolphin kwrite okular sddm bluez bluez-utils gwenview
+
+19-  Activar servicios
+19.1 systemctl enable NetworkManager
+19.2 systemctl enable sddm.service
+19.3 systemctl enable bluetooth.service
+
+20-  Reiniciar y disfrutar del nuevo sistema Arch Linux con kde plasma
+20.1 exit
+20.2 umount -R /mnt
+20.3 reboot
+
+Fuentes:
+Web 
+https://wiki.archlinux.org/
