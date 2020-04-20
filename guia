@@ -100,10 +100,20 @@ xdg-user-dirs xf86-input-synaptics
 17.3 grub-mkconfig -o /boot/grub/grub.cfg
 17.4 sudo mkdir /boot/efi/EFI/BOOT
 17.5 sudo cp /boot/efi/EFI/GRUB/grubx64.efi /boot/efi/EFI/BOOT/BOOTX64.EFI
-
+/********
 18-  Instalar escritorio plasma
 18.1 pacman -S pulseaudio pulseaudio-alsa xorg xorg-xinit xorg-server
+/******* Plasma
 18.2 pacman -S plasma-desktop plasma-meta kde-gtk-config konsole dolphin kwrite okular sddm bluez bluez-utils gwenview
+!****** deepin
+18.2 pacman -S deepin deepin-extra lightdm lightdm-deepin-greeter  
+$ sudo vi /etc/lightdm/lightdm.conf
+buscar  y reemplazar
+#greeter-session=example-gtk-gnome  greeter-session=lightdm-deepin-greeter
+$ sudo systemctl start lightdm.service
+$ sudo systemctl enable lightdm.service
+/****otros
+pacman -S git firefox 
 
 19-  Activar servicios
 19.1 systemctl enable NetworkManager
