@@ -6,5 +6,7 @@
     fi
  echo "Creando carpeta share"
  mkdir share
+ echo "Instalando opción de portapales en maquina virtual"
+ pacman -Sy spice-vdagent --noconfirm
  echo "montando unidad"
  mount -t 9p -o trans=virtio,version=9p2000.L /share share 
