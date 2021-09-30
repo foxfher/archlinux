@@ -1,0 +1,578 @@
+#!/bin/bash
+#Creador Fernando Bello
+
+idioma=""
+keymap="latam"
+user="fernando"
+userpasswd="moon"
+rootpasswd="moon"
+hostname="ArchLinux"
+KERNEL="linux-zen"
+grub="grub os-prober"
+
+p_c() { #(CHAR, COUNT)
+    local return=$(printf "%${2}s" ' ')
+    echo -e ${return// /$1}
+}
+_git() {
+    local _path="/tmp"
+    local _pkg=$([[ -z $1 ]] && echo "makepkg -si --noconfirm" || echo "${1}")
+    local _cmd=$([[ -z $2 ]] && echo "" || ([[ $2 == "makepkg" ]] && echo "&& makepkg -si --noconfirm" || echo "&& chmod +x ${2} && ${2}"))
+    local _url=$([[ $3 == *http* ]] && echo "${3}" || ([[ -z $3 ]] && echo "https://github.com/foxfher" || echo "https://github.com/${3}"))
+    arch-chroot /mnt cd $_path && git clone ${_url}/${_pkg}.git && (cd $_pkg $_cmd) && sudo rm -rf $_path/$_pkg
+}
+_yay_install() {
+    Welcome
+    echo "Instalación del Yay AUR Helper"
+    sed -i 's/%wheel ALL=(ALL) ALL/%wheel ALL=(ALL) NOPASSWD: ALL/' /mnt/etc/sudoers
+    echo "cd && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm && cd && rm -rf yay" | arch-chroot /mnt /bin/bash -c "su $user"
+    if [[ -f /mnt/etc/pamac.conf ]]; then
+        sed -i '/#EnableAUR/ s/^#//' /mnt/etc/pamac.conf
+        sed -i '/#CheckAURUpdates/ s/^#//' /mnt/etc/pamac.conf
+    fi
+}
+
+function Welcome() {
+    VERSION="Instalador ArchSES versión 1.0" # Nombre del Instalador
+    ARCHI=$(uname -m)                        # Muestra si el sistema de 32 o 64 bits
+    SYSTEM=$([[ -d /sys/firmware/efi/ ]] && echo "EFI" || echo "BIOS")
+    clear
+    echo " :: $VERSION - $SYSTEM ($ARCHI) ::"
+    CSEPATOR="─"
+    echo " $(p_c ${CSEPATOR} $((${COLUMNS} - 2)))"
+}
+
+function configlang() {
+    clear
+    idioma=$(curl https://ipapi.co/languages | awk -F "," '{print $1}' | sed 's/-/_/g' | sed "s|$|.UTF8|")
+    Welcome
+    echo "Configurando idioma en sistema  de arranque"
+    echo "$idioma UTF-8" >/etc/locale.gen
+    locale-gen
+    echo "LANG=$idioma" >/etc/locale.conf
+    exportlang=$(echo "LANG=$idioma")
+    export $exportlang
+    export LANG=$idioma
+    export $(cat /etc/locale.conf)
+    locale-gen
+    echo ""
+}
+
+function menudesktop() {
+    # Escritorios
+    echo ""
+    echo "Ingresa una opción marcando el numero correcto: "
+    echo ""
+    echo "1. Terminal Virtual (TTY)"
+    echo "2. Xfce4"
+    echo "3. Kde Plasma"
+    echo "4. Gnome 40"
+    echo ""
+    read -p "Introduce la opción de Escritorio: " escritorio
+    echo ""
+}
+
+function abstract() {
+    #Mostrar datos guardados
+    Welcome
+    echo ''
+    echo "Resumén de configiración"
+    echo ''
+    echo "Tu usuario: $user"
+    echo ''
+    echo "Clave de usuario: $userpasswd"
+    echo ''
+    echo "Clave de Administrador: $rootpasswd"
+    echo ''
+
+    # Vemos que opción elige el usuario y realiza tal acción en este caso mostrar mensaje
+    case $escritorio in
+    1) echo "Escritorio : Terminal Virtual (TTY)" ;;
+    2) echo "Escritorio : Xfce4" ;;
+    3) echo "Escritorio : Kde Plasma" ;;
+    4) echo "Escritorio : Gnome 40" ;;
+    *) echo "¡Incorrecto! por defecto se instalará Terminal Virtual (TTY)" ;;
+    esac
+    echo ""
+    # printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' _
+    echo ""
+    echo ""
+    echo "Para confirmar e instalar Arch Linux"
+    echo ""
+    echo "Presione ENTER o para salir presione CTRL + C"
+    read line
+}
+
+function menu() {
+    configlang
+    Welcome
+    echo "Información del Usuario" # Ingresar Datos de usuario
+    [[ -z "$user" ]] && (read -p "Introduce Nombre usuario Nuevo: " user echo "") || echo "se configurado el Nombre previamente"
+    [[ -z "$userpasswd" ]] && (read -p "Introduce la clave de $user: " userpasswd echo "") || echo "se configurado la contraseña para el usuario previamente"
+    echo "Informacion Root"
+    [[ -z "$userpasswd" ]] && read -p "Introduce la clave de Root/Administrador: " rootpasswd || echo "se configurado la contraseña para el ROOT previamente"
+    echo ""
+    sleep 2
+    Welcome
+    echo "Distribución de teclado:"
+    echo "ejemplo: (por default latam)"
+    echo "us United States | us-acentos US Intl | latam Latin American Spanish | es Spanish"
+    [[ -z "$keymap" ]] && read -p "Teclado: " keymap
+    [[ -z "$keymap" ]] && keymap="latam"
+    echo "Idioma para el sistema"
+    echo "ejemplo: en_US | es_ES "
+    [[ -z "$idioma" ]] && read -p "Idioma: " idioma || echo "se ha detectado el Idioma previamente"
+    [[ -z "$idioma" ]] && idioma="es_MX"
+    sleep 2
+    Welcome
+    menudesktop
+    abstract
+}
+function partition() {
+    Welcome
+    echo "Configuración Particiones"
+    echo ""
+    echo "Asegúrese de tener su disco previamente particionado, si no está seguro presione CTRL + C y ejecute este script nuevamente"
+    sleep 5
+    Welcome
+    echo "Tabla de particiones "
+    echo
+    lsblk
+    echo
+    while ! [[ "$partType" =~ ^(1|2)$ ]]; do
+        echo "Seleccione el tipo de raíz de partición (1/2):"
+        echo "1. EXT4"
+        echo "2. BTRFS"
+        read -p "Tipo de partición: " partType
+    done
+    Welcome
+    echo "Tabla de particiones "
+    echo
+    lsblk
+    echo
+    echo "Escriba el nombre de la partición, por ejemplo: /dev/sdaX /dev/nvme0n1pX"
+    read -p "Partición raíz(root): " rootPart
+    case $partType in
+    1)
+        mkfs.ext4 $rootPart
+        mount $rootPart /mnt
+        btrfs_pack=""
+        ;;
+    2)
+        mkfs.btrfs -f -L "Arch Linux" $rootPart
+        btrfs_pack="btrfs-progs grub-btrfs "
+        grub="grub efibootmgr os-prober dosfstools"
+        mount $rootPart /mnt
+        btrfs sub cr /mnt/@
+        btrfs su cr /mnt/@home
+        btrfs su cr /mnt/@var
+        btrfs su cr /mnt/@opt
+        btrfs su cr /mnt/@tmp
+        btrfs su cr /mnt/@.snapshots
+        umount $rootPart
+        mount -o noatime,commit=120,compress=zstd,space_cache,subvol=@ $rootPart /mnt
+        # You need to manually create folder to mount the other subvolumes at
+        mkdir -p /mnt/{boot,home,var,opt,tmp,.snapshots}
+        mount -o noatime,commit=120,compress=zstd,space_cache,subvol=@home $rootPart /mnt/home
+        mount -o noatime,commit=120,compress=zstd,space_cache,subvol=@opt $rootPart /mnt/opt
+        mount -o noatime,commit=120,compress=zstd,space_cache,subvol=@tmp $rootPart /mnt/tmp
+        mount -o noatime,commit=120,compress=zstd,space_cache,subvol=@.snapshots $rootPart /mnt/.snapshots
+        mount -o subvol=@var $rootPart /mnt/var
+        ;;
+    esac
+    Welcome
+    if [[ -d /sys/firmware/efi ]]; then
+        echo "Tabla de particiones "
+        echo
+        lsblk
+        echo
+        echo "Escriba el nombre de la partición, por ejemplo: /dev/sdaX /dev/nvme0n1pX"
+        read -p "Partición EFI: " efiPart
+        echo
+        echo "USUARIOS DE DUALBOOT: Si está compartiendo esta partición EFI con otro sistema operativo tipo N"
+        read -p "¿Quiere formatear esta partición como FAT32? (S/N) " formatEFI
+        if [[ $formatEFI == "y" || $formatEFI == "Y" || $formatEFI == "s" || $formatEFI == "S" ]]; then
+            mkfs.fat -F32 $efiPart
+        fi
+        mkdir -p /mnt/boot/efi
+        mount $efiPart /mnt/boot/efi
+        echo
+    fi
+    Welcome
+    echo "Tabla de particiones "
+    echo
+    lsblk
+    echo
+    echo "NOTA: Si no desea utilizar una partición de intercambio, escriba N a continuación"
+    echo
+    echo "Escriba el nombre de la partición, por ejemplo: /dev/sdaX /dev/nvme0n1pX"
+    read -p "partición Swap : " swap
+    if [[ $swap == "n" || $swap == "N" || $swap == "no" || $swap == "No" ]]; then
+        echo
+        echo "partición Swap no seleccionada"
+        sleep 1
+    else
+        mkswap $swap
+        swapon $swap
+    fi
+}
+
+function adduser() {
+    Welcome
+    # Agregando usuario y claves con administrador
+    arch-chroot /mnt /bin/bash -c "(echo $rootpasswd ; echo $rootpasswd) | passwd root"
+    arch-chroot /mnt /bin/bash -c "useradd -m -g users -s /bin/bash $user"
+    arch-chroot /mnt /bin/bash -c "(echo $userpasswd ; echo $userpasswd) | passwd $user"
+    sed -i "80i $user ALL=(ALL) ALL" /mnt/etc/sudoers
+}
+
+function language() {
+    # Idioma del sistema
+    Welcome
+    echo -e ""
+    echo -e "\t\t\t| Idioma del Sistema |"
+    echo -e ""
+    echo "$idioma.UTF-8 UTF-8" >/mnt/etc/locale.gen
+    arch-chroot /mnt /bin/bash -c "locale-gen"
+    echo "LANG=$idioma.UTF-8" >/mnt/etc/locale.conf
+    echo ""
+    cat /mnt/etc/locale.conf
+    echo ""
+    cat /mnt/etc/locale.gen
+    sleep 4
+    echo ""
+    arch-chroot /mnt /bin/bash -c "export $(cat /mnt/etc/locale.conf)"
+    export $(cat /mnt/etc/locale.conf)
+    arch-chroot /mnt /bin/bash -c "sudo -u $user export $(cat /etc/locale.conf)"
+    export $(cat /etc/locale.conf)
+    export $(cat /mnt/etc/locale.conf)
+    exportlang=$(echo "LANG=$idioma")
+    export $exportlang
+    export LANG=$idioma.UTF-8
+    locale-gen
+    arch-chroot /mnt /bin/bash -c "locale-gen"
+    sleep 3
+}
+
+function timezone() {
+    zonahoraria=$(curl https://ipapi.co/timezone)
+    Welcome
+    arch-chroot /mnt /bin/bash -c "ln -sf /usr/share/zoneinfo/$zonahoraria /etc/localtime"
+    arch-chroot /mnt /bin/bash -c "timedatectl set-timezone $zonahoraria"
+    arch-chroot /mnt /bin/bash -c "pacman -S ntp --noconfirm"
+    arch-chroot /mnt /bin/bash -c "ntpd -qg"
+    arch-chroot /mnt /bin/bash -c "hwclock --systohc"
+    sleep 3
+}
+function virtualkey() {
+    # Establecer un mapa de teclado para la terminal virtual
+    Welcome
+    echo "estbleciendo teclado virtual"
+    keymap=$(curl https://ipapi.co/languages | awk -F "," '{print $1}' | sed -e's/.$//' | sed -e's/.$//' | sed -e's/.$//')
+    echo "KEYMAP=$keymap" >/mnt/etc/vconsole.conf
+    cat /mnt/etc/vconsole.conf
+}
+function pacman() {
+    Welcome
+    # Configurando pacman para que tenga colores con el repo de MultiLib
+    sed -i 's/#Color/Color/g' /mnt/etc/pacman.conf
+    sed -i 's/#TotalDownload/TotalDownload/g' /mnt/etc/pacman.conf
+    sed -i 's/#VerbosePkgLists/VerbosePkgLists/g' /mnt/etc/pacman.conf
+    sed -i "37i ILoveCandy" /mnt/etc/pacman.conf
+    sed -i 's/#[multilib]/[multilib]/g' /mnt/etc/pacman.conf
+    sed -i "s/#Include = /etc/pacman.d/mirrorlist/Include = /etc/pacman.d/mirrorlist/g" /mnt/etc/pacman.conf
+}
+function mirrorlist() {
+    # Actualiza lista de mirrors en tu disco
+    Welcome
+    echo ""
+    echo "Actualizando lista de MirrorList"
+    echo ""
+    if [[ $1 == "/mnt" ]]; then
+        arch-chroot /mnt /bin/bash -c "reflector --verbose --latest 15 --protocol http --protocol https --sort rate --save /etc/pacman.d/mirrorlist"
+    else
+        reflector --verbose --latest 5 --protocol http --protocol https --sort rate --save /etc/pacman.d/mirrorlist
+    fi
+    Welcome
+    cat $1/etc/pacman.d/mirrorlist
+    sleep 3
+}
+function installKernel() {
+    # Instalación del kernel stable
+    Welcome
+    arch-chroot /mnt /bin/bash -c "pacman -S ${KERNEL} ${KERNEL}-headers linux-firmware linux linux-headers mkinitcpio --noconfirm"
+}
+function installgrub() {
+    Welcome
+    theme_grub="grub2Hat-ArchSES"
+    _git "$theme_grub" "./install.sh"
+    Welcome
+    arch-chroot /mnt /bin/bash -c "pacman -S --noconfirm $grub $btrfs_pack"
+    if [[ $SYSTEM=='EFI' ]]; then
+        arch-chroot /mnt /bin/bash -c "grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=${hostname}"
+    else
+        arch-chroot /mnt /bin/bash -c "grub-install ${rootPart::-1}"
+    fi
+    arch-chroot /mnt /bin/bash -c "grub-mkconfig -o /boot/grub/grub.cfg"
+}
+
+function installnetwork() {
+    # Ethernet
+    Welcome
+    #cpu
+    local _hardware=$(lspci | grep -i "Host bridge" | sed 's/.*://' | sed 's/(.*//' | sed 's/^[ \t]*//' | awk '{print tolower($0)}')
+    cpu=$([[ $_hardware == *intel* ]] && echo "intel-ucode" || echo "amd-ucode")
+    echo "configurando Tarejeta de Red y Tipo de Procesador"
+    arch-chroot /mnt /bin/bash -c "pacman -S dhcpcd networkmanager iwd net-tools ifplugd $cpu --noconfirm"
+    arch-chroot /mnt /bin/bash -c "systemctl enable dhcpcd NetworkManager"
+    echo "noipv6rs" >>/mnt/etc/dhcpcd.conf
+    echo "noipv6" >>/mnt/etc/dhcpcd.conf
+}
+function installwifi() {
+    #wifi
+    _hardware=$(lspci | grep -i "Network Controller" | sed 's/.*://' | sed 's/(.*//' | sed 's/^[ \t]*//' | awk '{print tolower($0)}')
+    if [[ $_hardware != "" ]]; then
+        wifi=$([[ $_hardware == *broadcom* ]] && echo "broadcom-wl$([[ $KERNEL == "linux" ]] && echo "" || echo "-dkms")" || echo "")
+        Welcome
+        echo "Detectando WIFI: driver $wifi"
+        arch-chroot /mnt /bin/bash -c "pacman -Sy --noconfirm --needed  iw wireless_tools wpa_supplicant dialog wireless-regdb  ${wifi}"
+        echo '[device]' >/etc/NetworkManager/conf.d/wifi_rand_mac.conf
+        echo 'wifi.scan-rand-mac-address=no' >>/etc/NetworkManager/conf.d/wifi_rand_mac.conf
+    fi
+}
+function installbluetooth() {
+    if [[ ! -z "$(lsusb | grep -i "Bluetooth")" ]]; then
+        Welcome
+        driver="$(lsusb | grep -i "Bluetooth" | cut -d" " -f9- | cut -d " " -f1 | awk '{print tolower($0)}')-firmware"
+        echo "Detectando Wifi: driver $driver"
+        arch-chroot /mnt runuser -l ${user} -c "yay -S --noconfirm --needed bluez bluez-utils pulseaudio-bluetooth ${driver}"
+    fi
+}
+function installtouch() {
+    # Paquetes para los distintos tipos perifeficos de entrada (Teclado, ratón, etc)
+    if [[ ! -z $(sudo dmidecode | grep -i "touch") ]]; then
+        Welcome
+        echo -e "Detectetando harware touch\n"
+        arch-chroot /mnt /bin/$SHELL -c "pacman -Sy --noconfirm --needed  xf86-input-synaptics"
+        mkdir -p /mnt/etc/X11/xorg.conf.d
+        echo -e 'Section "InputClass"' >/mnt/etc/X11/xorg.conf.d/30-touchpad.conf
+        echo -e 'Identifier "libinput touchpad catchall"' >>/mnt/etc/X11/xorg.conf.d/30-touchpad.conf
+        echo -e 'MatchIsTouchpad "on"' >>/mnt/etc/X11/xorg.conf.d/30-touchpad.conf
+        echo -e 'Driver "libinput"' >>/mnt/etc/X11/xorg.conf.d/30-touchpad.conf
+        echo -e 'Option "Tapping" "on"' >>/mnt/etc/X11/xorg.conf.d/30-touchpad.conf
+        echo -e 'Option "NaturalScrolling" "true"' >>/mnt/etc/X11/xorg.conf.d/30-touchpad.conf
+        echo -e 'EndSection' >>/mnt/etc/X11/xorg.conf.d/30-touchpad.conf
+    fi
+}
+
+function Installvga() {
+    # Driver de Vídeo automatico solo driver Libres
+    Welcome
+    if (lspci | grep VGA | grep "NVIDIA\|nVidia" &>/dev/null); then
+        #Nvidia
+        echo "Detectando Video: NVIDIA "
+        arch-chroot /mnt /bin/bash -c "pacman -S xf86-video-nouveau mesa lib32-mesa mesa-vdpau libva-mesa-driver lib32-mesa-vdpau lib32-libva-mesa-driver libva-vdpau-driver libvdpau-va-gl libva-utils vdpauinfo libvdpau lib32-libvdpau opencl-mesa clinfo ocl-icd lib32-ocl-icd opencl-headers --noconfirm"
+
+    elif (lspci | grep VGA | grep "Radeon R\|R2/R3/R4/R5" &>/dev/null); then
+        # Radeon
+        echo "Detectando Video: Radeon "
+        arch-chroot /mnt /bin/bash -c "pacman -S xf86-video-amdgpu mesa lib32-mesa vulkan-radeon lib32-vulkan-radeon mesa-vdpau libva-mesa-driver lib32-mesa-vdpau lib32-libva-mesa-driver libva-vdpau-driver libvdpau-va-gl libva-utils vdpauinfo opencl-mesa clinfo ocl-icd lib32-ocl-icd opencl-headers --noconfirm"
+
+    elif (lspci | grep VGA | grep "ATI\|AMD/ATI" &>/dev/null); then
+        # ATI
+        echo "Detectando Video: ATI "
+        arch-chroot /mnt /bin/bash -c "pacman -S xf86-video-ati mesa lib32-mesa mesa-vdpau libva-mesa-driver lib32-mesa-vdpau lib32-libva-mesa-driver libva-vdpau-driver libvdpau-va-gl libva-utils vdpauinfo opencl-mesa clinfo ocl-icd lib32-ocl-icd opencl-headers --noconfirm"
+
+    elif (lspci | grep VGA | grep "Intel" &>/dev/null); then
+        # Intel
+        echo "Detectando Video: Intel "
+        arch-chroot /mnt /bin/bash -c "pacman -S xf86-video-intel vulkan-intel mesa lib32-mesa intel-media-driver libva-intel-driver libva-vdpau-driver libvdpau-va-gl libva-utils vdpauinfo intel-compute-runtime beignet clinfo ocl-icd lib32-ocl-icd opencl-headers --noconfirm"
+
+    else
+        # Generico
+        echo "Detectando Video: Generico "
+        arch-chroot /mnt /bin/bash -c "pacman -S xf86-video-vesa xf86-video-fbdev mesa mesa-libgl lib32-mesa --noconfirm"
+
+    fi
+}
+
+function installzram() {
+    Welcome
+    echo "Instalando ZRam"
+    arch-chroot /mnt /bin/bash -c " pacman -S --noconfirm --needed systemd-swap"
+    echo -e "# Archivo de configuración básica de ZRam" >/etc/systemd/swap.conf
+    echo -e "zram_enabled=1" >>/etc/systemd/swap.conf
+    echo -e 'zram_size=$(($RAM_SIZE))      # This is  of ram size by default.' >>/etc/systemd/swap.conf
+    echo -e 'zram_streams=$NCPU' >>/etc/systemd/swap.conf
+    echo -e 'zram_alg=lz4                    # lzo lz4 deflate lz4hc 842 - for Linux 4.8.4' >>/etc/systemd/swap.conf
+    echo -e 'zram_prio=200                   # 1 - 32767' >>/etc/systemd/swap.conf
+    arch-chroot /mnt /bin/bash -c "sudo systemctl enable systemd-swap.service"
+    sleep 2
+}
+function installshell() {
+    Welcome
+    echo "Instalando shell Zsh"
+    arch-chroot /mnt /bin/bash -c "pacman -S zsh zsh-completions zsh-syntax-highlighting zsh-autosuggestions --noconfirm"
+    SH=zsh
+    arch-chroot /mnt /bin/bash -c "chsh -s /bin/$SH"
+    arch-chroot /mnt /bin/bash -c "chsh -s /usr/bin/$SH $user"
+    arch-chroot /mnt /bin/bash -c "chsh -s /bin/$SH $user"
+}
+function installdir() {
+    # Directorios del sistema
+    Welcome
+    echo "Instalando Directorios de usuarios"
+    arch-chroot /mnt /bin/bash -c "pacman -S git wget neofetch htop lsb-release xdg-user-dirs --noconfirm"
+    arch-chroot /mnt /bin/bash -c "xdg-user-dirs-update"
+    echo ""
+    arch-chroot /mnt /bin/bash -c "ls /home/$user"
+    sleep 5
+}
+function installorg() {
+    # Instala Xorg
+    Welcome
+    echo "Instalando Xorg"
+    arch-chroot /mnt /bin/bash -c "pacman -S xorg xorg-apps xorg-xinit xorg-twm xterm xorg-xclock --noconfirm"
+    Welcome
+    echo "Instalando Distrinución de teclado"
+    touch /mnt/etc/X11/xorg.conf.d/00-keyboard.conf
+    echo -e 'Section "InputClass"' >/mnt/etc/X11/xorg.conf.d/00-keyboard.conf
+    echo -e 'Identifier "system-keyboard"' >>/mnt/etc/X11/xorg.conf.d/00-keyboard.conf
+    echo -e 'MatchIsKeyboard "on"' >>/mnt/etc/X11/xorg.conf.d/00-keyboard.conf
+    echo -e 'Option "XkbLayout" "latam"' >>/mnt/etc/X11/xorg.conf.d/00-keyboard.conf
+    echo -e 'EndSection' >>/mnt/etc/X11/xorg.conf.d/00-keyboard.conf
+    echo ""
+    cat /mnt/etc/X11/xorg.conf.d/00-keyboard.conf
+    sleep 5
+}
+
+function installbasicdesktop() {
+    Welcome
+    # Audio
+    echo "Instalando Audio"
+    arch-chroot /mnt /bin/bash -c "pacman -S pulseaudio pavucontrol --noconfirm"
+    Welcome
+    # Fonts
+    echo "Instalando Fonts"
+    arch-chroot /mnt /bin/bash -c "pacman -S gnu-free-fonts ttf-hack ttf-inconsolata gnome-font-viewer --noconfirm"
+    # Welcome
+    # Navegador Web
+    #echo "Instalando Utilerias"
+    #arch-chroot /mnt /bin/bash -c "pacman -S firefox --noconfirm"
+    Welcome
+    # Formatos de lectura de todo tipo de discos incluido android
+    arch-chroot /mnt /bin/bash -c "pacman -S  msmtp libmtp libcddb gvfs gvfs-afc gvfs-smb gvfs-gphoto2 gvfs-mtp gvfs-goa gvfs-nfs gvfs-google dosfstools jfsutils f2fs-tools btrfs-progs exfat-utils ntfs-3g reiserfsprogs udftools xfsprogs nilfs-utils polkit gpart mtools --noconfirm"
+}
+function installUtilerias() {
+    # Utilidades de Compresión
+    BASE_ESSENTIALS+=('tar' 'gzip' 'bzip2' 'zip' 'unzip' 'unrar' 'p7zip' 'arj' 'lzop' 'xz')
+    arch-chroot /mnt runuser -l ${user} -c "yay -Syu --noconfirm --needed timeshift timeshift-autosnap google-chrome vlc visual-studio-code-bin $BASE_ESSENTIALS"
+}
+function installdesktop() {
+    Welcome
+    # Escritorio seleccionado
+    case $escritorio in
+    1)
+        echo "Escritorio : Terminal Virtual (TTY)"
+        sleep 3
+        ;;
+
+    2)
+        echo "Escritorio : Xfce4"
+        sleep 3
+        # Programas de Xfce4
+        arch-chroot /mnt /bin/bash -c "pacman -S --needed gparted xfce4 xfce4-goodies network-manager-applet ffmpegthumbs ffmpegthumbnailer --noconfirm"
+        # Programas para Login
+        arch-chroot /mnt /bin/bash -c "pacman -S lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings light-locker accountsservice --noconfirm"
+        arch-chroot /mnt /bin/bash -c "systemctl enable lightdm"
+        installbasicdesktop
+        ;;
+    3)
+        echo "Escritorio : Kde Plasma"
+        sleep 3
+        # Programas para KDE Plasma minimalista
+        arch-chroot /mnt /bin/bash -c "pacman -S --needed plasma dolphin konsole sddm partitionmanager ffmpegthumbs kdeconnect ffmpegthumbnailer --noconfirm"
+        arch-chroot /mnt /bin/bash -c "systemctl enable sddm"
+        installbasicdesktop
+        ;;
+    4)
+        echo "Escritorio : Gnome 40"
+        sleep 3
+        # Programas para Gnome minimalista
+        arch-chroot /mnt /bin/bash -c "pacman -S --needed gparted gnome-shell gdm gnome-control-center gnome-tweaks gnome-terminal nautilus --noconfirm"
+        arch-chroot /mnt /bin/bash -c "systemctl enable gdm"
+        installbasicdesktop
+        ;;
+    *)
+        arch-chroot /mnt /bin/bash -c "pacman -Syu --noconfirm"
+        ;;
+    esac
+}
+function goodbye() {
+    #DESMONTAR Y REINICIAR
+    umount -R /mnt
+    swapoff -a
+    Welcome
+    echo "Se ha Terminado de instalar tu sistema"
+    echo "Elanorado por: Fernando Bello "
+    echo ""
+    sleep 5
+    reboot
+}
+function configure() {
+    # Actualización de llaves y mirroslist del LIVECD
+    Welcome
+    pacman -Syy
+    pacman -Sy archlinux-keyring --noconfirm
+    Welcome
+    pacman -Sy reflector python rsync glibc curl --noconfirm
+    sleep 3
+    mirrorlist
+    Welcome
+    # Instalando Sistema base en nuestro Disco
+    echo ""
+    echo "Instalando Sistema base"
+    echo ""
+    pacstrap /mnt base base-devel nano reflector python rsync git curl
+    Welcome
+    # Creando Archiv FSTAB para detectar al iniciar el sistema
+    echo ""
+    echo "Archivo FSTAB"
+    echo ""
+    echo "genfstab -p /mnt >> /mnt/etc/fstab"
+    echo ""
+    genfstab -p /mnt >>/mnt/etc/fstab
+    cat /mnt/etc/fstab
+    sleep 4
+    pacman
+    Welcome
+    #Hosts y Nombre de computador
+    echo "$hostname" >/mnt/etc/hostname
+    echo "127.0.1.1 $hostname.localdomain $hostname" >/mnt/etc/hosts
+    echo "Hostname: $(cat /mnt/etc/hostname)"
+    echo ""
+    echo "Hosts: $(cat /mnt/etc/hosts)"
+    echo ""
+    adduser
+    language
+    timezone
+    virtualkey
+    mirrorlist "/mnt"
+    installKernel
+    installgrub
+    _yay_install
+    installnetwork
+    installwifi
+    installbluetooth
+    installtouch
+    Installvga
+    installshell
+    installdir
+    intallorg
+}
+
+#Welcome
+menu
+partition
+configure
+installdesktop
